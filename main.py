@@ -68,6 +68,55 @@ def _safe_numeric(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series, errors="coerce")
 
 
+def _histogram(
+    series: pd.Series,
+    *,
+    bins: int,
+    min_value: float | None = None,
+    max_value: float | None = None,
+    label_precision: int = 2,
+) -> list[dict[str, Any]]:
+    s = pd.to_numeric(series, errors="coerce").dropna()
+    if s.empty or bins <= 0:
+        return []
+
+    if min_value is None:
+        min_value = float(s.min())
+    if max_value is None:
+        max_value = float(s.max())
+
+    if not (max_value > min_value):
+        # Degenerate case
+        val = round(float(min_value), label_precision)
+        return [{"bin": f"{val}", "count": int(s.shape[0])}]
+
+    # Clamp then bin
+    s = s.clip(lower=min_value, upper=max_value)
+    counts, edges = pd.cut(
+        s,
+        bins=bins,
+        retbins=True,
+        include_lowest=True,
+        duplicates="drop",
+    )
+    vc = counts.value_counts(sort=False)
+
+    result: list[dict[str, Any]] = []
+    for i in range(len(edges) - 1):
+        left = round(float(edges[i]), label_precision)
+        right = round(float(edges[i + 1]), label_precision)
+        # Match pandas Interval string formatting by indexing into the categorical
+        interval = vc.index[i] if i < len(vc.index) else None
+        count = int(vc.iloc[i]) if i < len(vc) else 0
+        label = f"{left}–{right}"
+        if interval is None:
+            result.append({"bin": label, "count": 0})
+        else:
+            result.append({"bin": label, "count": count})
+
+    return result
+
+
 def _build_max_profile(
     df_raw: pd.DataFrame,
     *,
@@ -208,6 +257,41 @@ def analyze_dataframe(
         {True: "High", False: "Low"}
     )
 
+    # --- Additional visualizations for analytics dashboards ---
+    histograms: dict[str, list[dict[str, Any]]] = {}
+    histograms["risk_score"] = _histogram(
+        df["risk_score"],
+        bins=10,
+        min_value=0.0,
+        max_value=1.0,
+        label_precision=2,
+    )
+
+    if age_col:
+        histograms["age"] = _histogram(
+            df_raw[age_col],
+            bins=10,
+            min_value=0.0,
+            max_value=100.0,
+            label_precision=0,
+        )
+    if bmi_col:
+        histograms["bmi"] = _histogram(
+            df_raw[bmi_col],
+            bins=10,
+            min_value=10.0,
+            max_value=60.0,
+            label_precision=1,
+        )
+    if bp_col:
+        histograms["blood_pressure"] = _histogram(
+            df_raw[bp_col],
+            bins=10,
+            min_value=70.0,
+            max_value=220.0,
+            label_precision=0,
+        )
+
     # --- Anomaly Detection (lightweight, in-memory) ---
     numeric_df = df.select_dtypes(include=["number"]).drop(
         columns=["risk_score"], errors="ignore"
@@ -269,6 +353,7 @@ def analyze_dataframe(
         "visualizations": {
             "risk_distribution": risk_distribution,
             "correlations": correlations,
+            "histograms": histograms,
         },
         "high_risk_patients": high_risk_patients,
     }
