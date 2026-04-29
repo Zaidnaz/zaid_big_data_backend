@@ -26,18 +26,18 @@ app.add_middleware(
 )
 
 
-class AnalyzeRecordsRequest(BaseModel):
-    records: list[dict[str, Any]] = Field(default_factory=list)
-    mode: Literal["standard", "max"] = "standard"
-    options: "AnalyzeOptions | None" = None
-
-
 class AnalyzeOptions(BaseModel):
     risk_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
     anomaly_z_threshold: float = Field(default=3.0, ge=0.5, le=10.0)
     high_risk_limit: int = Field(default=10, ge=1, le=200)
     max_profile_top_numeric: int = Field(default=10, ge=1, le=50)
     max_profile_top_categories: int = Field(default=10, ge=1, le=50)
+
+
+class AnalyzeRecordsRequest(BaseModel):
+    records: list[dict[str, Any]] = Field(default_factory=list)
+    mode: Literal["standard", "max"] = "standard"
+    options: AnalyzeOptions | None = None
 
 
 def _normalize_key(key: str) -> str:
